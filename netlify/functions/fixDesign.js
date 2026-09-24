@@ -1,48 +1,44 @@
-// DesignCoach /api/fix-design — generates a FIXED version of the design image
-const MAGIC = { 'image/jpeg': [0xff, 0xd8], 'image/png': [0x89, 0x50], 'image/webp': [0x52, 0x49] };
-const MAX = 10 * 1024 * 1024;
+// DesignCoach /api/fix-design — generates fixed design as SVG mockup
 const R = (c, b) => ({
   statusCode: c,
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(b)
 });
 
-async function generateFixedImage({ mime, data, issues, fixAll }) {
+async function generateFix({ mime, data, issues, fixAll }) {
   const apiKey = process.env.AI_API_KEY;
-  // Use image generation model
-  const model = 'gemini-2.0-flash-exp';
+  const model = process.env.AI_MODEL || 'gemini-3.5-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const issueList = issues.map((i, idx) =>
     `${idx + 1}. [${i.severity.toUpperCase()}] ${i.title}: ${i.description} (Fix: ${i.how_to_improve})`
   ).join('\n');
 
-  const prompt = fixAll
-    ? `Edit this design image to fix ALL of these issues. Keep the same overall layout, content, text, and style — only fix the problems listed below. Do NOT add new content or change the message. Output ONLY the fixed image.
+  const SYSTEM = `You are DesignCoach. The user has a design with issues. You must generate a FIXED version of their design as an SVG.
 
-Issues to fix:
-${issueList}
+Look at the original design image carefully. Then create an SVG that:
+1. Keeps the same layout, text content, and overall structure
+2. Fixes the specific issues mentioned
+3. Looks professional and polished
 
-Rules:
-- Keep all original text and content
-- Keep the same general layout and style
-- Only fix the specific issues mentioned
-- Make it look professional and polished
-- Ensure good contrast and readability`
-    : `Edit this design image to fix this one issue. Keep everything else exactly the same — only fix this specific problem. Output ONLY the fixed image.
+Reply with ONLY one JSON object:
+{
+  "fixed_svg": "<svg>...the complete SVG code...</svg>",
+  "changes_made": ["Change 1: what was fixed", "Change 2: what was fixed"],
+  "summary": "Brief summary of all changes made"
+}
 
-Issue to fix:
-${issueList}
-
-Rules:
-- Keep all original text and content  
-- Keep everything else identical
-- Only change what's needed to fix this issue
-- Make it look professional`;
+IMPORTANT SVG RULES:
+- Use viewBox="0 0 600 800" or appropriate size
+- Include ALL text from the original design
+- Use web-safe fonts (Arial, Helvetica, sans-serif)
+- Make colors high contrast for readability
+- Keep the same general layout structure
+- Make it look like a real, polished design`;
 
   const parts = [
     { inline_data: { mime_type: mime, data: data } },
-    { text: prompt }
+    { text: `Fix these issues in this design:\n\n${issueList}\n\nGenerate the fixed version as SVG.${fixAll ? ' Fix ALL issues.' : ' Fix the most critical issue.'}` }
   ];
 
   const ctrl = new AbortController();
@@ -55,9 +51,11 @@ Rules:
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts }],
+        systemInstruction: { parts: [{ text: SYSTEM }] },
         generationConfig: {
-          responseModalities: ['IMAGE', 'TEXT'],
-          temperature: 0.4
+          maxOutputTokens: 16000,
+          temperature: 0.3,
+          responseMimeType: 'application/json'
         }
       }),
     });
@@ -68,33 +66,25 @@ Rules:
     }
 
     const j = await res.json();
-    const candidates = j.candidates || [];
-    
-    // Extract image and text from response
-    let fixedImage = null;
-    let description = '';
-    
-    for (const c of candidates) {
-      for (const p of (c.content?.parts || [])) {
-        if (p.inlineData) {
-          fixedImage = {
-            mime: p.inlineData.mimeType || 'image/png',
-            data: p.inlineData.data
-          };
-        }
-        if (p.text) {
-          description += p.text;
-        }
-      }
-    }
+    const raw = (j.candidates || [])
+      .flatMap(c => (c.content?.parts || []))
+      .map(p => p.text || '')
+      .join('');
 
-    if (!fixedImage) {
-      throw new Error('Could not generate fixed image. The model may not support image editing for this type of design.');
+    const s = raw.indexOf('{'), e = raw.lastIndexOf('}');
+    if (s < 0 || e < 0) throw new Error('no json');
+    const result = JSON.parse(raw.slice(s, e + 1));
+
+    // Convert SVG to data URL for easy display
+    let svgData = result.fixed_svg || '';
+    if (svgData && !svgData.startsWith('data:')) {
+      svgData = 'data:image/svg+xml;base64,' + Buffer.from(svgData).toString('base64');
     }
 
     return {
-      fixed_image: 'data:' + fixedImage.mime + ';base64,' + fixedImage.data,
-      description: description || 'Fixed design with issues resolved.'
+      fixed_image: svgData,
+      changes_made: result.changes_made || [],
+      description: result.summary || 'Fixed design with issues resolved.'
     };
   } finally { clearTimeout(t); }
 }
@@ -117,13 +107,10 @@ exports.handler = async (e) => {
     const mime = image.slice(5, cut);
     const data = image.slice(cut + 8);
 
-    const buf = Buffer.from(data, 'base64');
-    if (buf.length > MAX) return R(413, { error: 'Image too large.' });
-
-    const result = await generateFixedImage({ mime, data, issues, fixAll: !!fixAll });
+    const result = await generateFix({ mime, data, issues, fixAll: !!fixAll });
     return R(200, result);
   } catch (err) {
     console.error('fix-design failed:', err && err.message);
-    return R(502, { error: 'Could not generate fixed image: ' + (err?.message || 'Unknown error') });
+    return R(502, { error: 'Could not generate fixed design: ' + (err?.message || 'Unknown error') });
   }
 };
