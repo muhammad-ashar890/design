@@ -41,4 +41,42 @@ button:hover,.btn:hover{transform:translateY(-1px)}.pri{background:var(--acc);co
 .color-swatch:hover{transform:scale(1.1)}
 .color-hex{font-size:10px;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,.5);color:#fff}
 
+/* Fix buttons */
+.issue-actions{display:flex;gap:8px;margin-top:10px}
+.fix-btn{background:var(--ok);color:#fff;border-color:var(--ok);font-weight:600;font-size:13px;padding:6px 14px}
+.fix-btn:hover{filter:brightness(1.1);transform:translateY(-1px)}
+.fix-all-btn{background:var(--acc);color:var(--bg);border-color:var(--acc);font-size:15px;padding:10px 24px}
+
+/* Fix modal */
+.fix-modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto;backdrop-filter:blur(4px)}
+.fix-modal-content{max-width:800px;width:100%;max-height:90vh;overflow-y:auto;background:var(--card);border-radius:var(--r);padding:24px}
+
+/* Fix cards */
+.fix-card{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:16px;margin:12px 0}
+.fix-card-header{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.fix-card-header h3{margin:0;font-size:16px}
+.fix-steps ol{padding-left:20px;margin:8px 0}
+.fix-steps li{margin:6px 0;font-size:14px}
+.fix-code{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;margin:10px 0;overflow-x:auto}
+.fix-code pre{margin:0;font-size:13px}
+.fix-code code{color:var(--acc)}
+.fix-values{margin:10px 0}
+.fix-values-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.fix-value-item{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:4px 10px;font-size:13px;display:flex;align-items:center;gap:6px}
+.fix-value-item code{color:var(--acc);font-weight:600}
+.color-dot{width:16px;height:16px;border-radius:4px;border:1px solid var(--line);display:inline-block}
+.fix-comparison{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.fix-before{background:rgba(185,28,28,.05);border:1px solid rgba(185,28,28,.2);border-radius:8px;padding:10px}
+.fix-before h4{color:var(--crit);margin:0 0 4px}
+.fix-after{background:rgba(21,128,61,.05);border:1px solid rgba(21,128,61,.2);border-radius:8px;padding:10px}
+.fix-after h4{color:var(--ok);margin:0 0 4px}
+.fix-summary{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:16px}
+.fix-summary ul{padding-left:20px;margin:4px 0}
+
+/* Difficulty badges */
+.badge-easy{background:var(--ok);color:#fff}
+.badge-medium{background:var(--imp);color:#fff}
+.badge-hard{background:var(--crit);color:#fff}
+
+@media(max-width:600px){.fix-comparison{grid-template-columns:1fr}.fix-modal-content{padding:16px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}

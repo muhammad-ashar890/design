@@ -10,3 +10,8 @@
   from = "/api/analyze"
   to = "/.netlify/functions/analyze"
   status = 200
+
+[[redirects]]
+  from = "/api/fix-design"
+  to = "/.netlify/functions/fixDesign"
+  status = 200

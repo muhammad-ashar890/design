@@ -2,7 +2,7 @@ const CATS = ['typography', 'spacing', 'alignment', 'color', 'readability', 'hie
 const $ = (s) => document.querySelector(s), app = $('#app');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const store = { get: (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } } };
-const S = { file: null, src: null, pdf: false, result: null, demo: false, sel: null, teach: {}, err: '', busy: false, q: 0, pick: null, stage: 0 };
+const S = { file: null, src: null, pdf: false, result: null, demo: false, sel: null, teach: {}, err: '', busy: false, q: 0, pick: null, stage: 0, fixBusy: false, fixResult: null, fixIssue: null };
 const TYPES = ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'], MB = 1048576;
 const catLesson = (c) => KB.lessons.find((l) => l.id === (c === 'grammar' ? 'readability' : c)) || KB.lessons[0];
 
@@ -88,6 +88,64 @@ async function saveHistory() {
   while (h.length && !store.set('dc_history', h)) h.pop();
 }
 
+/* ---------- fix functionality ---------- */
+async function fixIssue(issueIdx) {
+  if (!S.result || !S.src) return;
+  const is = issues(S.result);
+  const issue = is[issueIdx];
+  if (!issue) return;
+
+  S.fixBusy = true; S.fixResult = null; S.fixIssue = issueIdx; render();
+
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), 120000);
+
+  try {
+    const res = await fetch('/api/fix-design', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: ctrl.signal,
+      body: JSON.stringify({ image: S.src, issues: [issue], fixAll: false })
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j.error || 'Could not generate fix instructions.');
+    S.fixResult = j; S.fixBusy = false;
+  } catch (e) {
+    S.fixResult = { error: e.name === 'AbortError' ? 'Request timed out. Try again.' : e.message };
+    S.fixBusy = false;
+  } finally { clearTimeout(to); render(); }
+}
+
+async function fixAllIssues() {
+  if (!S.result || !S.src) return;
+  const is = issues(S.result);
+  if (!is.length) return;
+
+  S.fixBusy = true; S.fixResult = null; S.fixIssue = 'all'; render();
+
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), 120000);
+
+  try {
+    const res = await fetch('/api/fix-design', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: ctrl.signal,
+      body: JSON.stringify({ image: S.src, issues: is, fixAll: true })
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j.error || 'Could not generate fix instructions.');
+    S.fixResult = j; S.fixBusy = false;
+  } catch (e) {
+    S.fixResult = { error: e.name === 'AbortError' ? 'Request timed out. Try again.' : e.message };
+    S.fixBusy = false;
+  } finally { clearTimeout(to); render(); }
+}
+
+function closeFix() {
+  S.fixResult = null; S.fixIssue = null; render();
+}
+
 /* ---------- export helpers ---------- */
 function generateShareText(r) {
   const is = issues(r);
@@ -141,7 +199,7 @@ function analysis() {
   const r = S.result; if (!r) return `<p class="hero">No analysis yet. <a href="#home">Analyze a design</a>.</p>`;
   const is = issues(r);
   const marks = is.filter((i) => i.location).map((i) => { const l = i.location; return `<div class="box ${i.severity}" style="left:${l.x}%;top:${l.y}%;width:${l.width}%;height:${l.height}%;${S.sel === i.n ? '' : 'opacity:.35'}"></div><button class="mk ${i.severity}" style="left:${l.x}%;top:${l.y}%" data-act="sel" data-n="${i.n}" aria-label="Issue ${i.n}: ${esc(i.title)}">${i.n}</button>`; }).join('');
-  const cards = is.map((i) => { const L = catLesson(i.cat), t = S.teach[i.n]; return `<div class="card issue ${i.severity} ${S.sel === i.n ? 'sel' : ''}" id="i${i.n}"><button style="all:unset;cursor:pointer;display:block;width:100%" data-act="sel" data-n="${i.n}"><span class="tag">${i.severity} · ${i.cat}${i.location ? '' : ' · no marker'}</span><h3>${i.n}. ${esc(i.title)}</h3></button><p style="margin:.3em 0">${esc(i.description)}</p><p class="small"><b>Why it matters:</b> ${esc(i.why_it_matters)}</p><p class="small"><b>How to improve:</b> ${esc(i.how_to_improve)}</p><p class="small mut">💡 ${esc(i.learning_tip)}</p><button data-act="teach" data-n="${i.n}" aria-expanded="${!!t}">📚 Teach Me</button>${t ? `<div class="teach"><h3>${L.title}</h3><p class="small"><b>What is the principle?</b> ${esc(L.what)}</p><p class="small"><b>Why does it matter?</b> ${esc(L.why)}</p><p class="small"><b>How can I recognize it?</b> ${esc(L.spot)}</p><p class="small"><b>Quick tip:</b> ${esc(L.tip)}</p></div>` : ''}</div>`; }).join('');
+  const cards = is.map((i, idx) => { const L = catLesson(i.cat), t = S.teach[i.n]; return `<div class="card issue ${i.severity} ${S.sel === i.n ? 'sel' : ''}" id="i${i.n}"><button style="all:unset;cursor:pointer;display:block;width:100%" data-act="sel" data-n="${i.n}"><span class="tag">${i.severity} · ${i.cat}${i.location ? '' : ' · no marker'}</span><h3>${i.n}. ${esc(i.title)}</h3></button><p style="margin:.3em 0">${esc(i.description)}</p><p class="small"><b>Why it matters:</b> ${esc(i.why_it_matters)}</p><p class="small"><b>How to improve:</b> ${esc(i.how_to_improve)}</p><p class="small mut">💡 ${esc(i.learning_tip)}</p><div class="issue-actions"><button data-act="teach" data-n="${i.n}" aria-expanded="${!!t}">📚 Teach Me</button><button class="fix-btn" data-act="fix-one" data-idx="${idx}">🔧 Fix It</button></div>${t ? `<div class="teach"><h3>${L.title}</h3><p class="small"><b>What is the principle?</b> ${esc(L.what)}</p><p class="small"><b>Why does it matter?</b> ${esc(L.why)}</p><p class="small"><b>How can I recognize it?</b> ${esc(L.spot)}</p><p class="small"><b>Quick tip:</b> ${esc(L.tip)}</p></div>` : ''}</div>`; }).join('');
 
   const typeBadge = r.design_type ? `<span class="badge">${esc(r.design_type)}</span> ${r.design_type_reason ? `<span class="mut small"> · ${esc(r.design_type_reason)}</span>` : ''}` : '';
   const critCount = is.filter(i => i.severity === 'critical').length;
@@ -165,13 +223,19 @@ function analysis() {
 ${summaryCard}
 <h3 style="margin-top:20px">Category Scores</h3><div class="card"><div class="scores">${CATS.map((c) => { const s = r.categories[c].score; return `<div class="sc"><b style="color:${scoreColor(s)}">${s}</b><span class="small mut">${c[0].toUpperCase() + c.slice(1)}</span></div>`; }).join('')}</div><p class="mut small">Scores reflect how closely a design follows specific principles, not artistic talent.</p></div>
 ${accSection}
-<h2>Needs Attention</h2>${cards || '<p class="card mut">No issues found. Nice work!</p>'}
+<h2>Needs Attention</h2>${is.length ? `<div class="card" style="text-align:center;margin-bottom:16px"><button class="fix-btn fix-all-btn" data-act="fix-all">🔧 Fix All Issues (${is.length})</button><p class="mut small" style="margin:8px 0 0">AI will generate step-by-step fix instructions for all issues</p></div>` : ''}${cards || '<p class="card mut">No issues found. Nice work!</p>'}
 <h2>What's Working</h2><div class="card"><ul class="clean">${r.strengths.map((s) => `<li class="ok"><span style="color:var(--ink)">${esc(s)}</span></li>`).join('') || '<li>—</li>'}</ul></div>
 <h2>Recommended Improvements</h2><div class="card"><ol class="clean">${r.recommendations.map((s) => `<li>${esc(s)}</li>`).join('')}</ol></div>
 ${sugSection}
 <h2>Learn</h2><div class="row" style="justify-content:flex-start">${r.learning_topics.map((t) => { const l = KB.lessons.find((x) => x.title.toLowerCase() === t.toLowerCase()); return `<a class="btn" href="#learn${l ? ':' + l.id : ''}">${esc(t)}</a>`; }).join('')}</div>
 <h2>Export & Share</h2><div class="card"><div class="row" style="justify-content:flex-start"><button data-act="export-txt">📄 Download Report</button><button data-act="export-json">📦 Download JSON</button><button data-act="share-analysis">📋 Copy Summary</button></div></div>
-<p class="row" style="justify-content:flex-start;margin-top:24px"><a class="btn pri" href="#home" data-act="new">🔍 Analyze another</a></p></div></div>`;
+<p class="row" style="justify-content:flex-start;margin-top:24px"><a class="btn pri" href="#home" data-act="new">🔍 Analyze another</a></p></div></div>
+
+${S.fixBusy ? `<div class="fix-modal"><div class="fix-modal-content card"><div class="spin" style="margin:0 auto 12px"></div><h2 style="text-align:center;margin:0">🔧 Generating ${S.fixIssue === 'all' ? 'All' : ''} Fix Instructions...</h2><p class="mut" style="text-align:center">AI is analyzing your design and creating step-by-step fixes</p></div></div>` : ''}
+
+${S.fixResult && !S.fixResult.error ? `<div class="fix-modal"><div class="fix-modal-content card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">🔧 Fix Instructions</h2><button data-act="close-fix" style="font-size:20px;padding:4px 12px">✕</button></div>${S.fixResult.overall_fix_plan ? `<div class="fix-summary"><p><b>📋 Summary:</b> ${esc(S.fixResult.overall_fix_plan.summary || '')}</p>${S.fixResult.overall_fix_plan.quick_wins?.length ? `<p><b>⚡ Quick Wins:</b></p><ul>${S.fixResult.overall_fix_plan.quick_wins.map(w => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}</div>` : ''}${(S.fixResult.fixes || []).map((f, i) => `<div class="fix-card"><div class="fix-card-header"><h3>🔧 ${esc(f.issue_title || 'Fix #' + (i+1))}</h3><div><span class="badge ${f.difficulty === 'easy' ? 'badge-easy' : f.difficulty === 'medium' ? 'badge-medium' : 'badge-hard'}">${esc(f.difficulty || 'medium')}</span><span class="mut small"> · ${esc(f.time_estimate || '')}</span></div></div><div class="fix-steps"><h4>Steps:</h4><ol>${(f.steps || []).map(s => `<li>${esc(s)}</li>`).join('')}</ol></div>${f.css_changes ? `<div class="fix-code"><h4>Code:</h4><pre><code>${esc(f.css_changes)}</code></pre></div>` : ''}${f.specific_values && Object.keys(f.specific_values).filter(k => f.specific_values[k]).length ? `<div class="fix-values"><h4>Specific Values:</h4><div class="fix-values-grid">${Object.entries(f.specific_values).filter(([k,v]) => v).map(([k,v]) => `<div class="fix-value-item"><span class="mut small">${esc(k.replace(/_/g,' '))}:</span> <code>${esc(v)}</code>${k === 'color' || k.includes('color') ? `<span class="color-dot" style="background:${esc(v)}"></span>` : ''}</div>`).join('')}</div></div>` : ''}<div class="fix-comparison"><div class="fix-before"><h4>❌ Before:</h4><p class="small">${esc(f.before_description || '')}</p></div><div class="fix-after"><h4>✅ After:</h4><p class="small">${esc(f.after_description || '')}</p></div></div></div>`).join('')}<div style="text-align:center;margin-top:20px"><button data-act="close-fix" class="pri">Done</button> <button data-act="export-fix">📄 Export Fix Guide</button></div></div></div>` : ''}
+
+${S.fixResult && S.fixResult.error ? `<div class="fix-modal"><div class="fix-modal-content card"><h2 style="color:var(--crit)">❌ Error</h2><p>${esc(S.fixResult.error)}</p><button data-act="close-fix">Close</button></div></div>` : ''}`;
 }
 
 function learn(id) {
@@ -229,6 +293,33 @@ document.addEventListener('click', (e) => {
         b.textContent = '✅ Copied!';
         setTimeout(() => { b.textContent = '📋 Copy Summary'; }, 2000);
       }).catch(() => downloadText('designcoach-report.txt', generateShareText(S.result)));
+    }
+  }
+  else if (a === 'fix-one') { fixIssue(+b.dataset.idx); }
+  else if (a === 'fix-all') { fixAllIssues(); }
+  else if (a === 'close-fix') { closeFix(); }
+  else if (a === 'export-fix') {
+    if (S.fixResult && S.fixResult.fixes) {
+      let txt = 'DESIGNCOACH FIX GUIDE\n' + '='.repeat(40) + '\n\n';
+      if (S.fixResult.overall_fix_plan) {
+        txt += 'SUMMARY: ' + (S.fixResult.overall_fix_plan.summary || '') + '\n\n';
+        if (S.fixResult.overall_fix_plan.quick_wins?.length) {
+          txt += 'QUICK WINS:\n';
+          S.fixResult.overall_fix_plan.quick_wins.forEach(w => { txt += '  - ' + w + '\n'; });
+          txt += '\n';
+        }
+      }
+      S.fixResult.fixes.forEach((f, i) => {
+        txt += 'FIX #' + (i+1) + ': ' + (f.issue_title || '') + '\n';
+        txt += 'Difficulty: ' + (f.difficulty || '?') + ' | Time: ' + (f.time_estimate || '?') + '\n\n';
+        txt += 'Steps:\n';
+        (f.steps || []).forEach((s, j) => { txt += '  ' + (j+1) + '. ' + s + '\n'; });
+        if (f.css_changes) txt += '\nCode:\n' + f.css_changes + '\n';
+        if (f.before_description) txt += '\nBefore: ' + f.before_description + '\n';
+        if (f.after_description) txt += 'After: ' + f.after_description + '\n';
+        txt += '\n' + '-'.repeat(40) + '\n\n';
+      });
+      downloadText('designcoach-fix-guide.txt', txt);
     }
   }
 });
