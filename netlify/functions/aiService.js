@@ -18,7 +18,7 @@ async function callModel({ mime, data }) {
   const t = setTimeout(() => ctrl.abort(), 55000);
   try {
     const apiKey = process.env.AI_API_KEY;
-    const model = process.env.AI_MODEL || 'gemini-1.5-flash';
+    const model = process.env.AI_MODEL || 'gemini-2.5-flash';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
     
     // Build parts array based on mime type
