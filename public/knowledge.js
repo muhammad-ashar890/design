@@ -1,4 +1,4 @@
-// DESIGN KNOWLEDGE BASE — edit or add lessons here. Used by the Learn page, "Teach me", and the AI prompt.
+// DESIGN KNOWLEDGE BASE — Lessons + Practice Questions
 // Fields: what (rule/explanation), why, spot (how to recognize), tip (how to fix), mistake, good, ex (exercise)
 const KB = {
   lessons: [
@@ -14,11 +14,48 @@ const KB = {
     { id: 'readability', title: 'Readability', what: 'Text must be easy to read at its actual size, including on a phone.', why: 'If people cannot read it, the message fails.', spot: 'View the design at phone size; anything you cannot read is too small.', tip: 'Keep body text large, lines short (45-75 characters) and paragraphs brief.', mistake: 'Tiny text and long lines over busy backgrounds.', good: 'Large clear text on a calm background.', ex: 'Shrink your design to 300 px wide and fix what becomes unreadable.' },
   ],
   practice: [
+    // Typography
     { q: 'Which layout has the strongest visual hierarchy?', o: ['A: All text the same size and weight', 'B: A large bold headline, medium subhead, small body text', 'C: Every line in a different bright color'], a: 1, why: 'B uses size and weight to show what to read first, second and third.' },
     { q: 'A designer uses five different fonts. What is the best fix?', o: ['Add more color', 'Reduce to one or two font families and vary size and weight', 'Make everything bold'], a: 1, why: 'Fewer fonts feels consistent; variety comes from size and weight.' },
+    { q: 'What is the recommended line height for body text?', o: ['1.0 (no extra space)', '1.4 to 1.6 (comfortable reading)', '2.5 (very spaced out)'], a: 1, why: '1.4–1.6 gives readers comfortable breathing room between lines.' },
+    { q: 'You see a poster with a decorative script font for the body text. What is wrong?', o: ['Nothing, it looks fancy', 'Decorative fonts are hard to read in long paragraphs', 'The color is wrong'], a: 1, why: 'Script and decorative fonts should only be used for short display text like headlines.' },
+    { q: 'What makes a heading effective?', o: ['Using as many fonts as possible', 'Clear size difference from body text, bold weight, concise wording', 'Making it the same size as body but underlined'], a: 1, why: 'Headings need to stand out through size, weight, and brevity.' },
+    // Spacing
     { q: 'Light gray text sits on a white background. What is the main problem?', o: ['Low contrast hurts readability', 'The text is too aligned', 'Too much white space'], a: 0, why: 'Text needs strong contrast against its background (about 4.5:1 minimum).' },
     { q: 'A label sits equally far from two different photos. What problem does this cause?', o: ['Balance', 'Unclear grouping from spacing', 'Bad kerning'], a: 1, why: 'Closeness signals relationship, so put the label nearer to the photo it belongs to.' },
     { q: 'A layout feels crowded. What is the best first step?', o: ['Shrink all text', 'Add more decoration', 'Increase margins and remove non-essential elements'], a: 2, why: 'White space gives content room to breathe; simplifying is usually better than adding.' },
+    { q: 'What does "consistent spacing" mean?', o: ['Every gap is exactly the same size', 'Related items use the same gap; unrelated items have larger gaps', 'No gaps at all'], a: 1, why: 'Consistent spacing within groups plus larger gaps between groups creates clear visual hierarchy.' },
+    { q: 'A website has 3px padding on some buttons and 12px on others. What is wrong?', o: ['Nothing, variety is good', 'Inconsistent spacing makes the design feel unpolished', 'Buttons should have 0 padding'], a: 1, why: 'Consistent spacing across similar elements creates a professional, cohesive look.' },
+    // Alignment
+    { q: 'A flyer has centered title, left-aligned body, and right-aligned footer. What is the issue?', o: ['Too much white space', 'Mixed alignment creates visual chaos', 'The fonts are wrong'], a: 1, why: 'Sticking to one alignment style per section creates order and professionalism.' },
+    { q: 'What is the strongest alignment for readability in most designs?', o: ['Right-aligned', 'Center-aligned', 'Left-aligned'], a: 2, why: 'Left alignment creates a clean, consistent left edge that the eye can follow easily.' },
+    { q: 'Two columns of text have slightly different left edges (off by 3px). Is this a problem?', o: ['No, 3px is invisible', 'Yes, even small misalignments break the visual grid and look sloppy', 'Only if the font is large'], a: 1, why: 'The eye notices misalignment even when the brain does not consciously register it.' },
+    // Color
+    { q: 'A design uses red, blue, green, yellow, purple, and orange. What is the problem?', o: ['Nothing, more colors are better', 'Too many competing colors create visual noise and no focal point', 'Not enough colors'], a: 1, why: 'A palette of 2-3 colors plus neutrals is usually enough. The accent color should reserved for the CTA.' },
+    { q: 'What is the 60-30-10 color rule?', o: ['60% fonts, 30% images, 10% whitespace', '60% dominant color, 30% secondary, 10% accent', 'Use exactly 3 colors equally'], a: 1, why: 'This ratio creates visual balance and ensures the accent color stands out.' },
+    { q: 'A call-to-action button uses the same color as the background. What happens?', o: ['It looks minimal', 'Users cannot find it — it blends in and gets ignored', 'It saves ink'], a: 1, why: 'CTAs need high contrast to stand out. Use your accent color for the most important action.' },
+    // Hierarchy
+    { q: 'Everything on a slide is bold and large. What is the hierarchy problem?', o: ['Nothing, bold is good', 'When everything is loud, nothing stands out — there is no reading order', 'The slide needs more images'], a: 1, why: 'Hierarchy needs variation: one element should be biggest/boldest, others progressively smaller/softer.' },
+    { q: 'What should viewers notice FIRST on a poster?', o: ['The fine print', 'The main headline or key visual', 'The company logo'], a: 1, why: 'The primary message or focal point should dominate through size, position, and contrast.' },
+    { q: 'A menu has all items at the same size. How do you fix hierarchy?', o: ['Add borders to every item', 'Group by category with section headers in bold/large text', 'Use more colors for each item'], a: 1, why: 'Section headers create scannable groups so readers can find what they want quickly.' },
+    // Composition
+    { q: 'A poster has all elements crammed into the top-left corner. What is the composition issue?', o: ['It looks modern', 'The visual weight is unbalanced — the bottom-right feels empty', 'There are too many colors'], a: 1, why: 'Good composition distributes visual weight. Balance heavy elements with lighter counterweights.' },
+    { q: 'What is the "rule of thirds"?', o: ['Use only 3 colors', 'Divide the canvas into a 3x3 grid and place key elements at intersection points', 'Use 3 fonts maximum'], a: 1, why: 'Placing elements at grid intersections creates natural focal points and dynamic balance.' },
+    { q: 'A design feels "flat" and boring. What composition technique helps?', o: ['Add more text', 'Create visual depth through size contrast, overlap, or layered elements', 'Use only pastel colors'], a: 1, why: 'Varying element sizes and creating layers adds depth and visual interest.' },
+    // Readability
+    { q: 'Body text is 10px on a mobile website. What is the main issue?', o: ['It fits more content', 'It is too small to read comfortably — minimum 16px for body text', '10px is the standard'], a: 1, why: 'Small text forces users to zoom or squint, creating a poor experience especially on mobile.' },
+    { q: 'A paragraph has 100 characters per line. What should you do?', o: ['Nothing, longer lines = more info', 'Reduce to 45-75 characters per line for comfortable reading', 'Add more line breaks every word'], a: 1, why: 'Long lines cause eye fatigue. The ideal line length for body text is 45-75 characters.' },
+    { q: 'White text on a busy photo background is hard to read. Best fix?', o: ['Make the text bold', 'Add a semi-transparent dark overlay behind the text', 'Increase the font size only'], a: 1, why: 'A dark overlay reduces background noise and creates contrast, making text readable.' },
+    // Accessibility
+    { q: 'What is the minimum contrast ratio for normal text (WCAG AA)?', o: ['2:1', '3:1', '4.5:1'], a: 2, why: 'WCAG 2.1 requires at least 4.5:1 contrast for normal text to be readable for most people.' },
+    { q: 'A design uses only red and green to show status (error vs success). What is the accessibility risk?', o: ['Nothing wrong', 'Color blind users (8% of men) cannot distinguish red from green', 'Red and green clash aesthetically'], a: 1, why: 'Always pair color with an icon, label, or pattern. Never rely on color alone.' },
+    { q: 'What font size is recommended for body text on the web?', o: ['10px', '12px', '16px or larger'], a: 2, why: '16px is the browser default and the minimum for comfortable reading on screens.' },
+    // General / Mixed
+    { q: 'A logo looks great at poster size but becomes unreadable as a tiny favicon. What principle is violated?', o: ['Color theory', 'Scalability — a good logo must work at all sizes', 'Alignment'], a: 1, why: 'Logos must be tested at every size from billboard to favicon. Simplify if it fails at small sizes.' },
+    { q: 'A social media post has 50 words of text. What is likely wrong?', o: ['Nothing, more info is better', 'Too much text — social posts need short, punchy copy with a clear CTA', 'The font is too small'], a: 1, why: 'Social media scrolls fast. Users spend 1-2 seconds per post. Lead with one clear message.' },
+    { q: 'A business card has a QR code, full address, 3 phone numbers, email, website, and social links. What is wrong?', o: ['Nothing, it is thorough', 'Information overload — prioritize essential contact methods only', 'The QR code is unnecessary'], a: 1, why: 'Business cards are small. Too much info makes everything unreadable. Pick the most important details.' },
+    { q: 'An infographic has 20 charts on one page. What is the problem?', o: ['More data is always better', 'Cognitive overload — break into sections or multiple pages with a clear reading path', 'The colors are wrong'], a: 1, why: 'People can only process a few data points at once. Guide them through a clear visual story.' },
+    { q: 'What makes a good call-to-action (CTA) button?', o: ['Small and subtle so it does not distract', 'High contrast, clear label, adequate size, and breathing room around it', 'As many CTAs as possible on one screen'], a: 1, why: 'A CTA should be easy to find and understand. Use your accent color and make it large enough to tap.' },
   ],
 };
 if (typeof module !== 'undefined') module.exports = KB;
