@@ -76,7 +76,7 @@ async function callModel({ mime, data }) {
   const t = setTimeout(() => ctrl.abort(), 80000);
   try {
     const apiKey = process.env.AI_API_KEY;
-    const model = process.env.AI_MODEL || 'gemini-3.5-flash';
+    const model = process.env.AI_MODEL || 'gemini-3.6-flash';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     const parts = [
