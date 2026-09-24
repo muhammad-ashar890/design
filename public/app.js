@@ -1,0 +1,128 @@
+const CATS = ['typography', 'spacing', 'alignment', 'color', 'readability', 'hierarchy', 'composition', 'grammar'];
+const $ = (s) => document.querySelector(s), app = $('#app');
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const store = { get: (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } } };
+const S = { file: null, src: null, pdf: false, result: null, demo: false, sel: null, teach: {}, err: '', busy: false, q: 0, pick: null, stage: 0 };
+const TYPES = ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'], MB = 1048576;
+const catLesson = (c) => KB.lessons.find((l) => l.id === (c === 'grammar' ? 'readability' : c)) || KB.lessons[0];
+
+/* ---------- demo ---------- */
+const DEMO_SVG = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 800'><rect width='600' height='800' fill='#f4efe6'/><text x='60' y='300' font-size='84' font-weight='800' font-family='Arial' fill='#1f2a44'>SUMMER</text><text x='60' y='390' font-size='84' font-weight='800' font-family='Arial' fill='#1f2a44'>SALE</text><text x='60' y='450' font-size='26' font-family='Arial' fill='#e2d79c'>Up to 50% off everything in store</text><rect x='270' y='620' width='240' height='60' rx='8' fill='#c9b458'/><text x='300' y='658' font-size='22' font-family='Arial' fill='#fff'>Shop now</text><text x='60' y='775' font-size='11' font-family='Arial' fill='#999'>Terms and conditions apply. Offer valid while stocks lasts.</text></svg>";
+const iss = (title, severity, description, why, how, tip, location) => ({ title, severity, description, why_it_matters: why, how_to_improve: how, learning_tip: tip, location });
+const DEMO = { overall: { score: 62, summary: 'A bold headline gives this poster a strong start, but low-contrast supporting text and a misaligned button weaken it.' },
+  categories: { typography: { score: 70, issues: [] }, spacing: { score: 65, issues: [] }, alignment: { score: 55, issues: [iss('Button does not align with the text', 'important', 'The button starts further right than the headline and subtitle.', 'Shared edges make a layout feel intentional.', 'Move the button to the same left edge as the headline (or center everything).', 'Draw a vertical line through your text edges and snap other elements to it.', { x: 45, y: 77, width: 40, height: 8 })] }, color: { score: 55, issues: [] }, readability: { score: 40, issues: [iss('Subtitle is nearly invisible', 'critical', 'Pale yellow text on a beige background has very low contrast.', 'If people cannot read the offer, the poster fails at its main job.', 'Use a dark navy for the subtitle, or place it on a dark block.', 'Aim for a contrast ratio of at least 4.5:1.', { x: 9, y: 52, width: 62, height: 7 })] }, hierarchy: { score: 72, issues: [iss('Button blends into the background', 'important', 'The gold button with white text is weak compared with the headline.', 'The call to action should be easy to find.', 'Use a dark or strongly contrasting button with clear text.', 'Reserve your accent color for the one action you want.', { x: 45, y: 77, width: 40, height: 8 })] }, composition: { score: 68, issues: [] }, grammar: { score: 80, issues: [iss('Small verb error in footer', 'minor', '"Offer valid while stocks lasts" should read "while stocks last".', 'Small copy slips reduce trust.', 'Change "lasts" to "last". The footer text is also very small.', 'Proofread text out loud.', { x: 9, y: 95, width: 72, height: 3 })] } },
+  strengths: ['The bold navy headline is clear and is the first thing you notice.', 'A simple, limited palette keeps the poster uncluttered.', 'Generous white space around the headline gives it room to breathe.'],
+  recommendations: ['Darken the subtitle so it is readable.', 'Align the button to the left edge shared by the text.', 'Make the button higher-contrast.', 'Fix the footer grammar.'], learning_topics: ['Contrast', 'Alignment', 'Visual Hierarchy'] };
+
+/* ---------- helpers ---------- */
+const issues = (r) => { let a = []; for (const c of CATS) for (const i of r.categories[c]?.issues || []) a.push({ ...i, cat: c }); const o = { critical: 0, important: 1, minor: 2 }; return a.sort((x, y) => o[x.severity] - o[y.severity]).map((x, n) => ({ ...x, n: n + 1 })); };
+const hist = () => store.get('dc_history', []);
+const settings = () => ({ save: true, ...store.get('dc_settings', {}) });
+const readData = (f) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f); });
+const loadImg = (src) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+async function shrink(src, max, q) { const i = await loadImg(src), k = Math.min(1, max / Math.max(i.width, i.height)), c = document.createElement('canvas'); c.width = Math.round(i.width * k); c.height = Math.round(i.height * k); const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(i, 0, 0, c.width, c.height); return c.toDataURL('image/jpeg', q); }
+const go = (h) => { location.hash = h; };
+
+async function pick(f) {
+  S.err = '';
+  if (!f) return;
+  if (!TYPES.includes(f.type)) S.err = 'Unsupported file. Please choose a PNG, JPG, WEBP or PDF.';
+  else if (!f.size) S.err = 'That file is empty.';
+  else if (f.size > 10 * MB) S.err = 'That file is larger than 10 MB.';
+  else if (f.type === 'application/pdf' && f.size > 4 * MB) S.err = 'PDFs are limited to about 4 MB. Export your design as PNG or JPG instead, or compress the PDF.';
+  if (S.err) return render();
+  try {
+    const d = await readData(f);
+    S.pdf = f.type === 'application/pdf'; S.file = { name: f.name, size: f.size }; S.demo = false;
+    S.src = S.pdf ? d : await shrink(d, 1800, 0.85); // compress before upload
+  } catch { S.err = 'We could not read that file. It may be corrupted.'; S.file = null; S.src = null; }
+  render();
+}
+
+async function analyze() {
+  S.busy = true; S.err = ''; S.stage = 0; render();
+  const timer = setInterval(() => { S.stage = Math.min(S.stage + 1, 6); render(); }, 2500);
+  const ctrl = new AbortController(), to = setTimeout(() => ctrl.abort(), 90000);
+  try {
+    const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctrl.signal, body: JSON.stringify({ image: S.src }) });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j.error || 'Something went wrong while analyzing your design. Please try again.');
+    S.result = j; S.demo = false; S.sel = null; S.teach = {};
+    if (settings().save) saveHistory();
+    S.busy = false; clearInterval(timer); go('analysis'); render();
+  } catch (e) {
+    S.err = e.name === 'AbortError' ? 'The analysis took too long. Please try again.' : (e instanceof TypeError ? 'Network problem. Check your connection and try again.' : e.message);
+    S.busy = false;
+  } finally { clearInterval(timer); clearTimeout(to); render(); }
+}
+async function saveHistory() {
+  const thumb = S.pdf ? '' : await shrink(S.src, 320, 0.6), n = issues(S.result).length;
+  const h = [{ id: Date.now(), name: S.file?.name || 'Design', date: new Date().toISOString(), score: S.result.overall.score, count: n, thumb, result: S.result }, ...hist()].slice(0, 30);
+  while (h.length && !store.set('dc_history', h)) h.pop();
+}
+
+/* ---------- views ---------- */
+function home() {
+  if (S.busy) { const st = ['Checking typography', 'Checking spacing', 'Checking alignment', 'Checking color', 'Checking hierarchy', 'Checking readability', 'Preparing feedback']; return `<div class="load card" role="status" aria-live="polite"><div class="spin"></div><h2 style="margin-top:0">Analyzing your design...</h2><ul style="padding:0">${st.map((s, i) => `<li class="${i < S.stage ? 'done' : i === S.stage ? 'on' : ''}">${i < S.stage ? '✓' : i === S.stage ? '●' : '○'} ${s}</li>`).join('')}</ul></div>`; }
+  const up = S.src ? `<div class="card prev">${S.pdf ? `<p class="mut" style="text-align:center">📄 PDF selected (preview not available; issue markers are not shown for PDFs)</p>` : `<img src="${S.src}" alt="Preview of your uploaded design">`}<p style="text-align:center;margin:0"><b>${esc(S.file.name)}</b> · <span class="mut">${(S.file.size / MB).toFixed(2)} MB</span></p><div class="row"><button class="pri" data-act="analyze">Analyze Design</button><label class="btn">Replace<input type="file" hidden accept=".png,.jpg,.jpeg,.webp,.pdf" data-file></label><button class="dng" data-act="remove">Remove</button></div></div>`
+    : `<label class="drop" id="drop"><input type="file" accept=".png,.jpg,.jpeg,.webp,.pdf" data-file><b style="font-size:18px">Drag and drop your design here</b><p class="mut">PNG • JPG • WEBP • PDF · up to 10 MB</p><span class="btn pri">Choose a file</span></label>`;
+  return `<section class="hero"><div class="eyebrow">DESIGNCOACH</div><h1>Design better. Learn why.</h1><p class="mut">Upload your design and get practical feedback that helps you become a better designer.</p></section>${up}${S.err ? `<p class="err" role="alert">${esc(S.err)}</p>` : ''}<div class="row"><button data-act="demo">Try a sample design</button></div><p class="mut small" style="text-align:center">🔒 Your design is used only for analysis. It is not saved on our servers; history keeps just a small thumbnail on this device.</p>`;
+}
+function analysis() {
+  const r = S.result; if (!r) return `<p class="hero">No analysis yet. <a href="#home">Analyze a design</a>.</p>`;
+  const is = issues(r);
+  const marks = is.filter((i) => i.location).map((i) => { const l = i.location; return `<div class="box ${i.severity}" style="left:${l.x}%;top:${l.y}%;width:${l.width}%;height:${l.height}%;${S.sel === i.n ? '' : 'opacity:.35'}"></div><button class="mk ${i.severity}" style="left:${l.x}%;top:${l.y}%" data-act="sel" data-n="${i.n}" aria-label="Issue ${i.n}: ${esc(i.title)}">${i.n}</button>`; }).join('');
+  const cards = is.map((i) => { const L = catLesson(i.cat), t = S.teach[i.n]; return `<div class="card issue ${i.severity} ${S.sel === i.n ? 'sel' : ''}" id="i${i.n}"><button style="all:unset;cursor:pointer;display:block;width:100%" data-act="sel" data-n="${i.n}"><span class="tag">${i.severity} · ${i.cat}${i.location ? '' : ' · no marker'}</span><h3>${i.n}. ${esc(i.title)}</h3></button><p style="margin:.3em 0">${esc(i.description)}</p><p class="small"><b>Why it matters:</b> ${esc(i.why_it_matters)}</p><p class="small"><b>How to improve:</b> ${esc(i.how_to_improve)}</p><p class="small mut">💡 ${esc(i.learning_tip)}</p><button data-act="teach" data-n="${i.n}" aria-expanded="${!!t}">Teach Me</button>${t ? `<div class="teach"><h3>${L.title}</h3><p class="small"><b>What is the principle?</b> ${esc(L.what)}</p><p class="small"><b>Why does it matter?</b> ${esc(L.why)}</p><p class="small"><b>How can I recognize it?</b> ${esc(L.spot)}</p><p class="small"><b>Quick tip:</b> ${esc(L.tip)}</p></div>` : ''}</div>`; }).join('');
+  return `<div class="dash"><div class="stage"><div class="card" style="text-align:center">${S.demo ? '<p><span class="badge">Demo Analysis</span> <span class="mut small">This is a built-in sample, not a real upload.</span></p>' : ''}<div class="wrap"><img src="${S.src}" alt="The analyzed design with numbered issue markers">${marks}</div>${S.pdf ? '<p class="mut small">Issue markers are not available for PDFs.</p>' : ''}</div></div>
+<div><div class="card"><div style="display:flex;gap:16px;align-items:center"><div><div class="big">${r.overall.score}</div><div class="mut small">Overall</div></div><p style="margin:0">${esc(r.overall.summary)}</p></div><h3 style="margin-top:16px">Category scores</h3><div class="scores">${CATS.map((c) => `<div class="sc"><b>${r.categories[c].score}</b><span class="small mut">${c[0].toUpperCase() + c.slice(1)}</span></div>`).join('')}</div><p class="mut small">Scores reflect how closely a design follows specific principles, not artistic talent.</p></div>
+<h2>Needs Attention</h2>${cards || '<p class="mut">No issues found. Nice work!</p>'}
+<h2>What's Working</h2><div class="card"><ul class="clean">${r.strengths.map((s) => `<li class="ok"><span style="color:var(--ink)">${esc(s)}</span></li>`).join('') || '<li>—</li>'}</ul></div>
+<h2>Recommended Improvements</h2><div class="card"><ol class="clean">${r.recommendations.map((s) => `<li>${esc(s)}</li>`).join('')}</ol></div>
+<h2>Learn</h2><div class="row" style="justify-content:flex-start">${r.learning_topics.map((t) => { const l = KB.lessons.find((x) => x.title.toLowerCase() === t.toLowerCase()); return `<a class="btn" href="#learn${l ? ':' + l.id : ''}">${esc(t)}</a>`; }).join('')}</div>
+<p class="row" style="justify-content:flex-start;margin-top:24px"><a class="btn pri" href="#home" data-act="new">Analyze another</a></p></div></div>`;
+}
+function learn(id) {
+  if (id === 'practice') return practice();
+  if (id) { const l = KB.lessons.find((x) => x.id === id); if (l) return `<a href="#learn">← All lessons</a><div class="card" style="margin-top:12px;max-width:720px"><h1>${l.title}</h1>${[['What it is', l.what], ['Why it matters', l.why], ['How to spot it', l.spot], ['Common mistake', l.mistake], ['Good practice', l.good], ['Quick tip', l.tip], ['Exercise', l.ex]].map(([a, b]) => `<h3>${a}</h3><p style="margin-top:0">${esc(b)}</p>`).join('')}</div>`; }
+  return `<h1>Learn</h1><p class="mut">Beginner lessons on the fundamentals.</p><div class="grid">${KB.lessons.map((l) => `<a class="card" style="text-decoration:none" href="#learn:${l.id}"><h3>${l.title}</h3><p class="mut small" style="margin:0">${esc(l.what)}</p></a>`).join('')}<a class="card" style="text-decoration:none;border-color:var(--acc)" href="#learn:practice"><h3>Practice mode →</h3><p class="mut small" style="margin:0">Test yourself with ${KB.practice.length} quick questions.</p></a></div>`;
+}
+function practice() {
+  const Q = KB.practice; if (S.q >= Q.length) return `<div class="card hero"><h1>Done!</h1><p>You finished all ${Q.length} questions.</p><button class="pri" data-act="restart">Practice again</button> <a class="btn" href="#learn">Back to lessons</a></div>`;
+  const q = Q[S.q], a = S.pick !== null;
+  return `<a href="#learn">← Lessons</a><div class="card" style="max-width:640px;margin-top:12px"><p class="mut small">Question ${S.q + 1} of ${Q.length}</p><h2 style="margin-top:0">${esc(q.q)}</h2>${q.o.map((o, i) => `<button style="display:block;width:100%;text-align:left;margin-bottom:8px;${a && i === q.a ? 'border-color:var(--ok)' : a && i === S.pick ? 'border-color:var(--crit)' : ''}" data-act="ans" data-i="${i}" ${a ? 'disabled' : ''}>${esc(o)}</button>`).join('')}${a ? `<p role="status"><b class="${S.pick === q.a ? 'ok' : 'dng'}">${S.pick === q.a ? 'Correct!' : 'Not quite.'}</b> ${esc(q.why)}</p><button class="pri" data-act="next">Next</button>` : ''}</div>`;
+}
+function history() {
+  const h = hist();
+  return `<h1>History</h1><p class="mut">Saved on this device only. Original designs are never stored, just a small thumbnail.</p>${h.length ? `<div class="grid">${h.map((x) => `<div class="card">${x.thumb ? `<img class="thumb" src="${x.thumb}" alt="Thumbnail of ${esc(x.name)}" loading="lazy">` : '<div class="thumb" style="display:grid;place-items:center">📄</div>'}<h3 style="margin-top:10px">${esc(x.name)}</h3><p class="mut small">${new Date(x.date).toLocaleDateString()} · Score ${x.score} · ${x.count} issue${x.count === 1 ? '' : 's'}</p><div class="row" style="justify-content:flex-start"><button data-act="open" data-id="${x.id}">Open</button><button class="dng" data-act="del" data-id="${x.id}">Delete analysis</button></div></div>`).join('')}</div>` : '<p class="card">No analyses yet. <a href="#home">Analyze a design</a>.</p>'}`;
+}
+function settingsView() {
+  return `<h1>Settings</h1><div class="card" style="max-width:560px"><label><input type="checkbox" data-set="save" ${settings().save ? 'checked' : ''}> Save analyses (with a small thumbnail) to History on this device</label><p class="mut small">Your design is used only for analysis and is not stored on our servers.</p><button class="dng" data-act="clear">Delete all saved history</button></div>`;
+}
+
+/* ---------- router + events ---------- */
+function render() {
+  const [p, id] = (location.hash.slice(1) || 'home').split(':'), y = scrollY;
+  document.querySelectorAll('nav a').forEach((a) => a.toggleAttribute('aria-current', a.hash.slice(1) === (p === 'analysis' ? 'home' : p)) || a.removeAttribute('aria-current'));
+  document.querySelectorAll('nav a').forEach((a) => { if (a.hash.slice(1) === (p === 'analysis' ? 'home' : p)) a.setAttribute('aria-current', 'page'); });
+  app.innerHTML = { home, analysis, learn: () => learn(id), history, settings: settingsView }[p]?.() ?? home();
+  scrollTo(0, y);
+}
+addEventListener('hashchange', () => { scrollTo(0, 0); render(); });
+document.addEventListener('change', (e) => { if (e.target.matches('[data-file]')) pick(e.target.files[0]); if (e.target.dataset.set) { store.set('dc_settings', { ...settings(), [e.target.dataset.set]: e.target.checked }); } });
+['dragover', 'dragleave', 'drop'].forEach((t) => document.addEventListener(t, (e) => { const d = e.target.closest?.('#drop'); if (!d) return; e.preventDefault(); d.classList.toggle('over', t === 'dragover'); if (t === 'drop') pick(e.dataTransfer.files[0]); }));
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act]'); if (!b) return; const a = b.dataset.act, n = +b.dataset.n;
+  if (a === 'analyze') analyze();
+  else if (a === 'remove') { S.file = S.src = null; S.err = ''; render(); }
+  else if (a === 'new') { S.file = S.src = null; S.result = null; }
+  else if (a === 'demo') { S.src = 'data:image/svg+xml,' + encodeURIComponent(DEMO_SVG); S.result = DEMO; S.demo = true; S.pdf = false; S.sel = null; S.teach = {}; go('analysis'); }
+  else if (a === 'sel') { S.sel = n; render(); document.getElementById('i' + n)?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion:reduce)').matches ? 'auto' : 'smooth', block: 'center' }); }
+  else if (a === 'teach') { S.teach[n] = !S.teach[n]; render(); }
+  else if (a === 'ans') { S.pick = +b.dataset.i; render(); }
+  else if (a === 'next') { S.q++; S.pick = null; render(); }
+  else if (a === 'restart') { S.q = 0; S.pick = null; render(); }
+  else if (a === 'open') { const x = hist().find((h) => h.id === +b.dataset.id); if (x) { S.result = x.result; S.src = x.thumb; S.pdf = !x.thumb; S.demo = false; S.sel = null; S.teach = {}; go('analysis'); } }
+  else if (a === 'del') { if (confirm('Delete this analysis?')) { store.set('dc_history', hist().filter((h) => h.id !== +b.dataset.id)); render(); } }
+  else if (a === 'clear') { if (confirm('Delete all saved history?')) { store.set('dc_history', []); render(); } }
+});
+render();
