@@ -1,6 +1,6 @@
 const CATS = ['typography', 'spacing', 'alignment', 'color', 'readability', 'hierarchy', 'composition', 'grammar'];
 const $ = (s) => document.querySelector(s), app = $('#app');
-const esc = (s) => String(s ?? '').replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;' }[c]));
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const store = { get: (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } } };
 const S = { file: null, src: null, pdf: false, result: null, demo: false, sel: null, teach: {}, err: '', busy: false, q: 0, pick: null, stage: 0 };
 const TYPES = ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'], MB = 1048576;
@@ -28,11 +28,32 @@ const readData = (f) => new Promise((res, rej) => { const r = new FileReader(); 
 const loadImg = (src) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
 async function shrink(src, max, q) { const i = await loadImg(src), k = Math.min(1, max / Math.max(i.width, i.height)), c = document.createElement('canvas'); c.width = Math.round(i.width * k); c.height = Math.round(i.height * k); const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(i, 0, 0, c.width, c.height); return c.toDataURL('image/jpeg', q); }
 const go = (h) => { location.hash = h; };
+const scoreColor = (s) => s >= 75 ? 'var(--ok)' : s >= 50 ? 'var(--imp)' : 'var(--crit)';
+const scoreLabel = (s) => s >= 85 ? 'Excellent' : s >= 70 ? 'Good' : s >= 50 ? 'Fair' : s >= 30 ? 'Needs Work' : 'Poor';
+
+/* ---------- paste support ---------- */
+async function handlePaste(e) {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault();
+      const file = item.getAsFile();
+      if (file) {
+        const ext = item.type.split('/')[1] || 'png';
+        const namedFile = new File([file], `pasted-design.${ext}`, { type: item.type });
+        pick(namedFile);
+        return;
+      }
+    }
+  }
+}
+document.addEventListener('paste', handlePaste);
 
 async function pick(f) {
   S.err = '';
   if (!f) return;
-  if (!TYPES.includes(f.type)) S.err = 'Unsupported file. Please choose a PNG, JPG, WEBP or PDF.';
+  if (!TYPES.includes(f.type) && !f.type.startsWith('image/')) S.err = 'Unsupported file. Please choose a PNG, JPG, WEBP or PDF.';
   else if (!f.size) S.err = 'That file is empty.';
   else if (f.size > 10 * MB) S.err = 'That file is larger than 10 MB.';
   else if (f.type === 'application/pdf' && f.size > 4 * MB) S.err = 'PDFs are limited to about 4 MB. Export your design as PNG or JPG instead, or compress the PDF.';
@@ -57,7 +78,7 @@ async function analyze() {
     if (settings().save) saveHistory();
     S.busy = false; clearInterval(timer); go('analysis'); render();
   } catch (e) {
-    S.err = e.name === 'AbortError' ? 'The analysis took too long (90s limit). Try a smaller image or try again.' : (e instanceof TypeError ? 'Network problem. Check your connection and try again.' : e.message);
+    S.err = e.name === 'AbortError' ? 'The analysis took too long. Try a smaller image or try again.' : (e instanceof TypeError ? 'Network problem. Check your connection and try again.' : e.message);
     S.busy = false;
   } finally { clearInterval(timer); clearTimeout(to); render(); }
 }
@@ -67,66 +88,37 @@ async function saveHistory() {
   while (h.length && !store.set('dc_history', h)) h.pop();
 }
 
-/* ---------- accessibility helpers ---------- */
-function hexToRgb(hex) {
-  hex = hex.replace('#', '');
-  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
-  const n = parseInt(hex, 16);
-  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
-}
-function luminance(r, g, b) {
-  const a = [r, g, b].map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
-  return 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2];
-}
-function contrastRatio(hex1, hex2) {
-  const c1 = hexToRgb(hex1), c2 = hexToRgb(hex2);
-  const l1 = luminance(c1.r, c1.g, c1.b), l2 = luminance(c2.r, c2.g, c2.b);
-  const lighter = Math.max(l1, l2), darker = Math.min(l1, l2);
-  return ((lighter + 0.05) / (darker + 0.05)).toFixed(2);
-}
-function wcagRating(ratio) {
-  if (ratio >= 7) return { grade: 'AAA', cls: 'ok' };
-  if (ratio >= 4.5) return { grade: 'AA', cls: 'ok' };
-  if (ratio >= 3) return { grade: 'AA Large', cls: 'warn' };
-  return { grade: 'Fail', cls: 'fail' };
-}
-
 /* ---------- export helpers ---------- */
 function generateShareText(r) {
   const is = issues(r);
-  let txt = `DesignCoach Analysis\n${'='.repeat(40)}\n\n`;
+  let txt = `DESIGNCOACH ANALYSIS\n${'='.repeat(40)}\n\n`;
   txt += `Design Type: ${r.design_type || 'Unknown'}\n`;
-  txt += `Overall Score: ${r.overall.score}/100\n`;
+  txt += `Overall Score: ${r.overall.score}/100 (${scoreLabel(r.overall.score)})\n`;
   txt += `Summary: ${r.overall.summary}\n\n`;
-  txt += `Category Scores:\n`;
+  txt += `CATEGORY SCORES:\n`;
   for (const c of CATS) txt += `  ${c.charAt(0).toUpperCase() + c.slice(1)}: ${r.categories[c].score}/100\n`;
   if (r.accessibility) {
-    txt += `\nAccessibility: ${r.accessibility.overall_rating || 'N/A'}\n`;
-    txt += `Color Blindness Risk: ${r.accessibility.color_blindness_risk || 'Unknown'}\n`;
+    txt += `\nACCESSIBILITY:\n`;
+    txt += `  WCAG Rating: ${r.accessibility.overall_rating || 'N/A'}\n`;
+    txt += `  Color Blindness Risk: ${r.accessibility.color_blindness_risk || 'Unknown'}\n`;
   }
-  txt += `\nIssues Found: ${is.length}\n`;
+  txt += `\nISSUES (${is.length}):\n`;
   is.forEach((i, idx) => { txt += `  ${idx + 1}. [${i.severity.toUpperCase()}] ${i.title}\n     ${i.description}\n     Fix: ${i.how_to_improve}\n\n`; });
-  txt += `\nStrengths:\n`;
+  txt += `STRENGTHS:\n`;
   (r.strengths || []).forEach(s => { txt += `  + ${s}\n`; });
-  txt += `\nRecommendations:\n`;
+  txt += `\nRECOMMENDATIONS:\n`;
   (r.recommendations || []).forEach((s, i) => { txt += `  ${i + 1}. ${s}\n`; });
-  if (r.design_suggestions?.color_palette?.length) {
-    txt += `\nSuggested Colors: ${r.design_suggestions.color_palette.join(', ')}\n`;
-  }
-  if (r.design_suggestions?.layout_tip) {
-    txt += `Layout Tip: ${r.design_suggestions.layout_tip}\n`;
-  }
+  if (r.design_suggestions?.color_palette?.length) txt += `\nSuggested Colors: ${r.design_suggestions.color_palette.join(', ')}\n`;
+  if (r.design_suggestions?.layout_tip) txt += `Layout Tip: ${r.design_suggestions.layout_tip}\n`;
   return txt;
 }
 function downloadText(filename, text) {
   const blob = new Blob([text], { type: 'text/plain' });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-  a.download = filename; a.click(); URL.revokeObjectURL(a.href);
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); URL.revokeObjectURL(a.href);
 }
 function downloadJSON(filename, obj) {
   const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-  a.download = filename; a.click(); URL.revokeObjectURL(a.href);
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); URL.revokeObjectURL(a.href);
 }
 
 /* ---------- views ---------- */
@@ -136,8 +128,13 @@ function home() {
     return `<div class="load card" role="status" aria-live="polite"><div class="spin"></div><h2 style="margin-top:0">Analyzing your design...</h2><ul style="padding:0">${st.map((s, i) => `<li class="${i < S.stage ? 'done' : i === S.stage ? 'on' : ''}">${i < S.stage ? '✓' : i === S.stage ? '●' : '○'} ${s}</li>`).join('')}</ul><p class="mut small">This may take 15-60 seconds depending on image size.</p></div>`;
   }
   const up = S.src ? `<div class="card prev">${S.pdf ? `<p class="mut" style="text-align:center">📄 PDF selected (preview not available)</p>` : `<img src="${S.src}" alt="Preview of your uploaded design">`}<p style="text-align:center;margin:0"><b>${esc(S.file.name)}</b> · <span class="mut">${(S.file.size / MB).toFixed(2)} MB</span></p><div class="row"><button class="pri" data-act="analyze">🔍 Analyze Design</button><label class="btn">Replace<input type="file" hidden accept=".png,.jpg,.jpeg,.webp,.pdf" data-file></label><button class="dng" data-act="remove">Remove</button></div></div>`
-    : `<label class="drop" id="drop"><input type="file" accept=".png,.jpg,.jpeg,.webp,.pdf" data-file><b style="font-size:18px">Drag and drop your design here</b><p class="mut">PNG • JPG • WEBP • PDF · up to 10 MB</p><span class="btn pri">Choose a file</span></label>`;
-  return `<section class="hero"><div class="eyebrow">DESIGNCOACH</div><h1>Design better. Learn why.</h1><p class="mut">Upload your design and get AI-powered feedback on typography, spacing, color, accessibility, and more.</p></section>${up}${S.err ? `<p class="err" role="alert">${esc(S.err)}</p>` : ''}<div class="row"><button data-act="demo">🎨 Try a sample design</button></div><p class="mut small" style="text-align:center">🔒 Your design is used only for analysis. It is not saved on our servers.</p>`;
+    : `<label class="drop" id="drop"><input type="file" accept=".png,.jpg,.jpeg,.webp,.pdf" data-file><b style="font-size:18px">Drag & drop your design here</b><p class="mut">PNG • JPG • WEBP • PDF · up to 10 MB</p><span class="btn pri">Choose a file</span></label>`;
+  return `<section class="hero"><div class="eyebrow">DESIGNCOACH</div><h1>Design better. Learn why.</h1><p class="mut">Upload your design and get AI-powered feedback on typography, spacing, color, accessibility, and more.</p></section>
+  ${up}
+  <div class="paste-hint card" style="max-width:720px;margin:16px auto;text-align:center;background:var(--bg)"><p style="margin:0"><b>📋 Tip:</b> Copy any image and press <kbd>Ctrl+V</kbd> to paste it directly!</p></div>
+  ${S.err ? `<p class="err" role="alert">${esc(S.err)}</p>` : ''}
+  <div class="row"><button data-act="demo">🎨 Try a sample design</button></div>
+  <p class="mut small" style="text-align:center">🔒 Your design is used only for analysis. It is not saved on our servers.</p>`;
 }
 
 function analysis() {
@@ -146,8 +143,14 @@ function analysis() {
   const marks = is.filter((i) => i.location).map((i) => { const l = i.location; return `<div class="box ${i.severity}" style="left:${l.x}%;top:${l.y}%;width:${l.width}%;height:${l.height}%;${S.sel === i.n ? '' : 'opacity:.35'}"></div><button class="mk ${i.severity}" style="left:${l.x}%;top:${l.y}%" data-act="sel" data-n="${i.n}" aria-label="Issue ${i.n}: ${esc(i.title)}">${i.n}</button>`; }).join('');
   const cards = is.map((i) => { const L = catLesson(i.cat), t = S.teach[i.n]; return `<div class="card issue ${i.severity} ${S.sel === i.n ? 'sel' : ''}" id="i${i.n}"><button style="all:unset;cursor:pointer;display:block;width:100%" data-act="sel" data-n="${i.n}"><span class="tag">${i.severity} · ${i.cat}${i.location ? '' : ' · no marker'}</span><h3>${i.n}. ${esc(i.title)}</h3></button><p style="margin:.3em 0">${esc(i.description)}</p><p class="small"><b>Why it matters:</b> ${esc(i.why_it_matters)}</p><p class="small"><b>How to improve:</b> ${esc(i.how_to_improve)}</p><p class="small mut">💡 ${esc(i.learning_tip)}</p><button data-act="teach" data-n="${i.n}" aria-expanded="${!!t}">📚 Teach Me</button>${t ? `<div class="teach"><h3>${L.title}</h3><p class="small"><b>What is the principle?</b> ${esc(L.what)}</p><p class="small"><b>Why does it matter?</b> ${esc(L.why)}</p><p class="small"><b>How can I recognize it?</b> ${esc(L.spot)}</p><p class="small"><b>Quick tip:</b> ${esc(L.tip)}</p></div>` : ''}</div>`; }).join('');
 
-  // Design type badge
-  const typeBadge = r.design_type ? `<span class="badge">${esc(r.design_type)}</span> ${r.design_type_reason ? `<span class="mut small">${esc(r.design_type_reason)}</span>` : ''}` : '';
+  const typeBadge = r.design_type ? `<span class="badge">${esc(r.design_type)}</span> ${r.design_type_reason ? `<span class="mut small"> · ${esc(r.design_type_reason)}</span>` : ''}` : '';
+  const critCount = is.filter(i => i.severity === 'critical').length;
+  const impCount = is.filter(i => i.severity === 'important').length;
+  const minCount = is.filter(i => i.severity === 'minor').length;
+  const sc = scoreColor(r.overall.score);
+
+  // Summary card
+  const summaryCard = `<div class="card summary-card"><div class="summary-header"><div class="big" style="color:${sc}">${r.overall.score}</div><div><div class="mut small">Overall Score</div><div style="font-weight:600;color:${sc}">${scoreLabel(r.overall.score)}</div></div></div><p style="margin:12px 0 0">${esc(r.overall.summary)}</p>${typeBadge ? `<p style="margin:8px 0 0">${typeBadge}</p>` : ''}<div class="summary-stats"><div class="stat"><b style="color:var(--crit)">${critCount}</b><span class="small mut">Critical</span></div><div class="stat"><b style="color:var(--imp)">${impCount}</b><span class="small mut">Important</span></div><div class="stat"><b style="color:var(--min)">${minCount}</b><span class="small mut">Minor</span></div><div class="stat"><b>${is.length}</b><span class="small mut">Total Issues</span></div></div></div>`;
 
   // Accessibility section
   const acc = r.accessibility;
@@ -157,15 +160,17 @@ function analysis() {
   const suggestions = r.design_suggestions;
   const sugSection = suggestions ? `<h2>🎨 Suggestions</h2><div class="card">${suggestions.color_palette?.length ? `<p class="small"><b>Suggested Color Palette:</b></p><div class="color-palette">${suggestions.color_palette.map(c => `<div class="color-swatch" style="background:${esc(c)}" title="${esc(c)}"><span class="color-hex">${esc(c)}</span></div>`).join('')}</div>` : ''}${suggestions.layout_tip ? `<p class="small" style="margin-top:12px"><b>💡 Layout Tip:</b> ${esc(suggestions.layout_tip)}</p>` : ''}</div>` : '';
 
-  return `<div class="dash"><div class="stage"><div class="card" style="text-align:center">${S.demo ? '<p><span class="badge">Demo Analysis</span> <span class="mut small">This is a built-in sample.</span></p>' : ''}${typeBadge ? `<p style="margin:8px 0">${typeBadge}</p>` : ''}<div class="wrap"><img src="${S.src}" alt="The analyzed design with numbered issue markers">${marks}</div>${S.pdf ? '<p class="mut small">Issue markers are not available for PDFs.</p>' : ''}</div></div>
-<div><div class="card"><div style="display:flex;gap:16px;align-items:center"><div><div class="big">${r.overall.score}</div><div class="mut small">Overall</div></div><p style="margin:0">${esc(r.overall.summary)}</p></div><h3 style="margin-top:16px">Category scores</h3><div class="scores">${CATS.map((c) => `<div class="sc"><b>${r.categories[c].score}</b><span class="small mut">${c[0].toUpperCase() + c.slice(1)}</span></div>`).join('')}</div><p class="mut small">Scores reflect how closely a design follows specific principles, not artistic talent.</p></div>
+  return `<div class="dash"><div class="stage"><div class="card" style="text-align:center">${S.demo ? '<p><span class="badge">Demo Analysis</span> <span class="mut small">This is a built-in sample.</span></p>' : ''}<div class="wrap"><img src="${S.src}" alt="The analyzed design with numbered issue markers">${marks}</div>${S.pdf ? '<p class="mut small">Issue markers are not available for PDFs.</p>' : ''}</div></div>
+<div>
+${summaryCard}
+<h3 style="margin-top:20px">Category Scores</h3><div class="card"><div class="scores">${CATS.map((c) => { const s = r.categories[c].score; return `<div class="sc"><b style="color:${scoreColor(s)}">${s}</b><span class="small mut">${c[0].toUpperCase() + c.slice(1)}</span></div>`; }).join('')}</div><p class="mut small">Scores reflect how closely a design follows specific principles, not artistic talent.</p></div>
 ${accSection}
-<h2>Needs Attention</h2>${cards || '<p class="mut">No issues found. Nice work!</p>'}
+<h2>Needs Attention</h2>${cards || '<p class="card mut">No issues found. Nice work!</p>'}
 <h2>What's Working</h2><div class="card"><ul class="clean">${r.strengths.map((s) => `<li class="ok"><span style="color:var(--ink)">${esc(s)}</span></li>`).join('') || '<li>—</li>'}</ul></div>
 <h2>Recommended Improvements</h2><div class="card"><ol class="clean">${r.recommendations.map((s) => `<li>${esc(s)}</li>`).join('')}</ol></div>
 ${sugSection}
 <h2>Learn</h2><div class="row" style="justify-content:flex-start">${r.learning_topics.map((t) => { const l = KB.lessons.find((x) => x.title.toLowerCase() === t.toLowerCase()); return `<a class="btn" href="#learn${l ? ':' + l.id : ''}">${esc(t)}</a>`; }).join('')}</div>
-<h2>Export</h2><div class="card"><div class="row" style="justify-content:flex-start"><button data-act="export-txt">📄 Download TXT Report</button><button data-act="export-json">📦 Download JSON</button><button data-act="share-analysis">🔗 Copy Summary</button></div></div>
+<h2>Export & Share</h2><div class="card"><div class="row" style="justify-content:flex-start"><button data-act="export-txt">📄 Download Report</button><button data-act="export-json">📦 Download JSON</button><button data-act="share-analysis">📋 Copy Summary</button></div></div>
 <p class="row" style="justify-content:flex-start;margin-top:24px"><a class="btn pri" href="#home" data-act="new">🔍 Analyze another</a></p></div></div>`;
 }
 
@@ -184,7 +189,7 @@ function practice() {
 
 function history() {
   const h = hist();
-  return `<h1>📋 History</h1><p class="mut">Saved on this device only. Original designs are never stored.</p>${h.length ? `<div class="grid">${h.map((x) => `<div class="card">${x.thumb ? `<img class="thumb" src="${x.thumb}" alt="Thumbnail of ${esc(x.name)}" loading="lazy">` : '<div class="thumb" style="display:grid;place-items:center">📄</div>'}<h3 style="margin-top:10px">${esc(x.name)}</h3><p class="mut small">${new Date(x.date).toLocaleDateString()} · Score ${x.score} · ${x.count} issue${x.count === 1 ? '' : 's'}</p><div class="row" style="justify-content:flex-start"><button data-act="open" data-id="${x.id}">Open</button><button class="dng" data-act="del" data-id="${x.id}">Delete</button></div></div>`).join('')}</div>` : '<p class="card">No analyses yet. <a href="#home">Analyze a design</a>.</p>'}`;
+  return `<h1>📋 History</h1><p class="mut">Saved on this device only. Original designs are never stored.</p>${h.length ? `<div class="grid">${h.map((x) => `<div class="card">${x.thumb ? `<img class="thumb" src="${x.thumb}" alt="Thumbnail of ${esc(x.name)}" loading="lazy">` : '<div class="thumb" style="display:grid;place-items:center">📄</div>'}<h3 style="margin-top:10px">${esc(x.name)}</h3><p class="mut small">${new Date(x.date).toLocaleDateString()} · <span style="color:${scoreColor(x.score)};font-weight:600">Score ${x.score}</span> · ${x.count} issue${x.count === 1 ? '' : 's'}</p><div class="row" style="justify-content:flex-start"><button data-act="open" data-id="${x.id}">Open</button><button class="dng" data-act="del" data-id="${x.id}">Delete</button></div></div>`).join('')}</div>` : '<p class="card">No analyses yet. <a href="#home">Analyze a design</a>.</p>'}`;
 }
 
 function settingsView() {
@@ -222,7 +227,7 @@ document.addEventListener('click', (e) => {
     if (S.result) {
       navigator.clipboard.writeText(generateShareText(S.result)).then(() => {
         b.textContent = '✅ Copied!';
-        setTimeout(() => { b.textContent = '🔗 Copy Summary'; }, 2000);
+        setTimeout(() => { b.textContent = '📋 Copy Summary'; }, 2000);
       }).catch(() => downloadText('designcoach-report.txt', generateShareText(S.result)));
     }
   }
