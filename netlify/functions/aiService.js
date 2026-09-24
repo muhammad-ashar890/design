@@ -17,23 +17,54 @@ async function callModel({ mime, data }) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 55000);
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const apiKey = process.env.AI_API_KEY;
+    const model = process.env.AI_MODEL || 'gemini-1.5-flash';
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    
+    // Build parts array based on mime type
+    const parts = [];
+    
+    // Add image/document part
+    parts.push({
+      inline_data: {
+        mime_type: mime,
+        data: data
+      }
+    });
+    
+    // Add text prompt
+    parts.push({
+      text: 'Analyze this design now. JSON only.'
+    });
+    
+    const res = await fetch(url, {
       method: 'POST',
       signal: ctrl.signal,
-      headers: { 'content-type': 'application/json', 'x-api-key': process.env.AI_API_KEY, 'anthropic-version': '2023-06-01' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: process.env.AI_MODEL || 'claude-haiku-4-5-20251001',
-        max_tokens: 4000,
-        system: SYSTEM,
-        messages: [{ role: 'user', content: [
-          { type: mime === 'application/pdf' ? 'document' : 'image', source: { type: 'base64', media_type: mime, data } },
-          { type: 'text', text: 'Analyze this design now. JSON only.' },
-        ] }],
+        contents: [{ parts }],
+        systemInstruction: {
+          parts: [{ text: SYSTEM }]
+        },
+        generationConfig: {
+          maxOutputTokens: 4000,
+          temperature: 0.7,
+          responseMimeType: 'application/json'
+        }
       }),
     });
-    if (!res.ok) throw new Error('provider status ' + res.status);
+    
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => '');
+      throw new Error(`Gemini API error ${res.status}: ${errBody}`);
+    }
+    
     const j = await res.json();
-    return (j.content || []).map((b) => b.text || '').join('');
+    // Extract text from Gemini response
+    return (j.candidates || [])
+      .flatMap(c => (c.content?.parts || []))
+      .map(p => p.text || '')
+      .join('');
   } finally { clearTimeout(t); }
 }
 
