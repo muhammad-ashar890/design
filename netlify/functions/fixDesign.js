@@ -71,14 +71,43 @@ IMPORTANT SVG RULES:
       .map(p => p.text || '')
       .join('');
 
-    const s = raw.indexOf('{'), e = raw.lastIndexOf('}');
-    if (s < 0 || e < 0) throw new Error('no json');
-    const result = JSON.parse(raw.slice(s, e + 1));
+    // Find the JSON object - handle cases where model adds extra text
+    let result;
+    try {
+      // Try parsing the whole thing first
+      result = JSON.parse(raw);
+    } catch {
+      // Find the last valid JSON object
+      const s = raw.indexOf('{'), e = raw.lastIndexOf('}');
+      if (s < 0 || e < 0) throw new Error('no json');
+      try {
+        result = JSON.parse(raw.slice(s, e + 1));
+      } catch {
+        // Try to find balanced braces
+        let depth = 0, end = s;
+        for (let i = s; i < raw.length; i++) {
+          if (raw[i] === '{') depth++;
+          if (raw[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+        }
+        result = JSON.parse(raw.slice(s, end + 1));
+      }
+    }
 
-    // Convert SVG to data URL for easy display
+    // Clean and convert SVG to data URL
     let svgData = result.fixed_svg || '';
-    if (svgData && !svgData.startsWith('data:')) {
+    // Remove markdown code blocks if present
+    svgData = svgData.replace(/```svg\n?/g, '').replace(/```\n?/g, '').trim();
+    // Ensure it starts with <svg
+    const svgStart = svgData.indexOf('<svg');
+    if (svgStart > 0) svgData = svgData.slice(svgStart);
+    // Ensure it ends with </svg>
+    const svgEnd = svgData.lastIndexOf('</svg>');
+    if (svgEnd >= 0) svgData = svgData.slice(0, svgEnd + 6);
+    
+    if (svgData && svgData.includes('<svg')) {
       svgData = 'data:image/svg+xml;base64,' + Buffer.from(svgData).toString('base64');
+    } else {
+      svgData = '';
     }
 
     return {
