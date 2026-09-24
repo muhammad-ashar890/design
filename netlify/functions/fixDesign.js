@@ -7,7 +7,7 @@ const R = (c, b) => ({
 
 async function generateFix({ mime, data, issues, fixAll }) {
   const apiKey = process.env.AI_API_KEY;
-  const model = process.env.AI_MODEL || 'gemini-3.6-flash';
+  const model = process.env.AI_MODEL || 'gemini-3.5-flash-lite';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const issueList = issues.map((i, idx) =>
