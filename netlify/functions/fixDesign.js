@@ -1,55 +1,52 @@
-// DesignCoach /api/fix-design — takes image + issues, returns fix instructions
-const KB = require('../../public/knowledge.js');
+// DesignCoach /api/fix-design — generates a FIXED version of the design image
+const MAGIC = { 'image/jpeg': [0xff, 0xd8], 'image/png': [0x89, 0x50], 'image/webp': [0x52, 0x49] };
+const MAX = 10 * 1024 * 1024;
+const R = (c, b) => ({
+  statusCode: c,
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(b)
+});
 
-async function callFixModel({ mime, data, issues, fixAll }) {
+async function generateFixedImage({ mime, data, issues, fixAll }) {
   const apiKey = process.env.AI_API_KEY;
-  const model = process.env.AI_MODEL || 'gemini-3.5-flash';
+  // Use image generation model
+  const model = 'gemini-2.0-flash-exp';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const issueList = issues.map((i, idx) =>
-    `${idx + 1}. [${i.severity.toUpperCase()}] ${i.title}\n   Problem: ${i.description}\n   Category: ${i.cat}\n   Current fix suggestion: ${i.how_to_improve}`
-  ).join('\n\n');
+    `${idx + 1}. [${i.severity.toUpperCase()}] ${i.title}: ${i.description} (Fix: ${i.how_to_improve})`
+  ).join('\n');
 
-  const SYSTEM = `You are DesignCoach, an expert graphic design mentor. The user wants to fix issues in their design.
+  const prompt = fixAll
+    ? `Edit this design image to fix ALL of these issues. Keep the same overall layout, content, text, and style — only fix the problems listed below. Do NOT add new content or change the message. Output ONLY the fixed image.
 
-For EACH issue provided, give SPECIFIC, ACTIONABLE fix instructions that a beginner can follow.
+Issues to fix:
+${issueList}
 
-Reply with ONLY one JSON object in this EXACT shape:
-{
-  "fixes": [
-    {
-      "issue_title": "exact issue title",
-      "steps": ["Step 1: do this", "Step 2: do that", "Step 3: etc"],
-      "css_changes": "any CSS code if applicable, or empty string",
-      "specific_values": {"color": "#hex or empty", "font_size": "16px or empty", "margin": "16px or empty"},
-      "before_description": "what it looks like now",
-      "after_description": "what it should look like after fix",
-      "difficulty": "easy|medium|hard",
-      "time_estimate": "5 minutes"
-    }
-  ],
-  "overall_fix_plan": {
-    "priority_order": ["fix 1 title", "fix 2 title"],
-    "quick_wins": ["easy fixes that make big impact"],
-    "summary": "Brief summary of all fixes"
-  }
-}
+Rules:
+- Keep all original text and content
+- Keep the same general layout and style
+- Only fix the specific issues mentioned
+- Make it look professional and polished
+- Ensure good contrast and readability`
+    : `Edit this design image to fix this one issue. Keep everything else exactly the same — only fix this specific problem. Output ONLY the fixed image.
 
-IMPORTANT:
-- Be VERY specific with values (exact hex colors, exact pixel sizes, exact font weights)
-- Give step-by-step instructions a beginner can follow
-- If it is a code fix (CSS/HTML), provide the actual code
-- Estimate difficulty and time for each fix
-- Prioritize fixes by impact
-- Explain in simple, friendly language`;
+Issue to fix:
+${issueList}
+
+Rules:
+- Keep all original text and content  
+- Keep everything else identical
+- Only change what's needed to fix this issue
+- Make it look professional`;
 
   const parts = [
     { inline_data: { mime_type: mime, data: data } },
-    { text: `Analyze this design and provide fix instructions for these issues:\n\n${issueList}\n\n${fixAll ? 'Provide fixes for ALL issues listed above.' : 'Provide fix for the FIRST issue only.'}` }
+    { text: prompt }
   ];
 
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 80000);
+  const t = setTimeout(() => ctrl.abort(), 90000);
 
   try {
     const res = await fetch(url, {
@@ -58,11 +55,9 @@ IMPORTANT:
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts }],
-        systemInstruction: { parts: [{ text: SYSTEM }] },
         generationConfig: {
-          maxOutputTokens: 8000,
-          temperature: 0.3,
-          responseMimeType: 'application/json'
+          responseModalities: ['IMAGE', 'TEXT'],
+          temperature: 0.4
         }
       }),
     });
@@ -73,22 +68,36 @@ IMPORTANT:
     }
 
     const j = await res.json();
-    const raw = (j.candidates || [])
-      .flatMap(c => (c.content?.parts || []))
-      .map(p => p.text || '')
-      .join('');
+    const candidates = j.candidates || [];
+    
+    // Extract image and text from response
+    let fixedImage = null;
+    let description = '';
+    
+    for (const c of candidates) {
+      for (const p of (c.content?.parts || [])) {
+        if (p.inlineData) {
+          fixedImage = {
+            mime: p.inlineData.mimeType || 'image/png',
+            data: p.inlineData.data
+          };
+        }
+        if (p.text) {
+          description += p.text;
+        }
+      }
+    }
 
-    const s = raw.indexOf('{'), e = raw.lastIndexOf('}');
-    if (s < 0 || e < 0) throw new Error('no json');
-    return JSON.parse(raw.slice(s, e + 1));
+    if (!fixedImage) {
+      throw new Error('Could not generate fixed image. The model may not support image editing for this type of design.');
+    }
+
+    return {
+      fixed_image: 'data:' + fixedImage.mime + ';base64,' + fixedImage.data,
+      description: description || 'Fixed design with issues resolved.'
+    };
   } finally { clearTimeout(t); }
 }
-
-const R = (c, b) => ({
-  statusCode: c,
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(b)
-});
 
 exports.handler = async (e) => {
   if (e.httpMethod !== 'POST') return R(405, { error: 'Method not allowed.' });
@@ -108,10 +117,13 @@ exports.handler = async (e) => {
     const mime = image.slice(5, cut);
     const data = image.slice(cut + 8);
 
-    const result = await callFixModel({ mime, data, issues, fixAll: !!fixAll });
+    const buf = Buffer.from(data, 'base64');
+    if (buf.length > MAX) return R(413, { error: 'Image too large.' });
+
+    const result = await generateFixedImage({ mime, data, issues, fixAll: !!fixAll });
     return R(200, result);
   } catch (err) {
     console.error('fix-design failed:', err && err.message);
-    return R(502, { error: 'Could not generate fix instructions. Please try again.' });
+    return R(502, { error: 'Could not generate fixed image: ' + (err?.message || 'Unknown error') });
   }
 };

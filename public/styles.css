@@ -78,5 +78,12 @@ button:hover,.btn:hover{transform:translateY(-1px)}.pri{background:var(--acc);co
 .badge-medium{background:var(--imp);color:#fff}
 .badge-hard{background:var(--crit);color:#fff}
 
-@media(max-width:600px){.fix-comparison{grid-template-columns:1fr}.fix-modal-content{padding:16px}}
+/* Before/After comparison */
+.before-after{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+.ba-panel{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.ba-panel h3{text-align:center;padding:10px;margin:0;background:var(--bg);font-size:14px}
+.ba-img{padding:8px;display:flex;align-items:center;justify-content:center;min-height:200px;background:var(--card)}
+.ba-img img{max-width:100%;max-height:60vh;border-radius:8px;object-fit:contain}
+
+@media(max-width:600px){.before-after{grid-template-columns:1fr}.fix-comparison{grid-template-columns:1fr}.fix-modal-content{padding:16px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}

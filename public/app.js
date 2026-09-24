@@ -231,11 +231,11 @@ ${sugSection}
 <h2>Export & Share</h2><div class="card"><div class="row" style="justify-content:flex-start"><button data-act="export-txt">📄 Download Report</button><button data-act="export-json">📦 Download JSON</button><button data-act="share-analysis">📋 Copy Summary</button></div></div>
 <p class="row" style="justify-content:flex-start;margin-top:24px"><a class="btn pri" href="#home" data-act="new">🔍 Analyze another</a></p></div></div>
 
-${S.fixBusy ? `<div class="fix-modal"><div class="fix-modal-content card"><div class="spin" style="margin:0 auto 12px"></div><h2 style="text-align:center;margin:0">🔧 Generating ${S.fixIssue === 'all' ? 'All' : ''} Fix Instructions...</h2><p class="mut" style="text-align:center">AI is analyzing your design and creating step-by-step fixes</p></div></div>` : ''}
+${S.fixBusy ? `<div class="fix-modal"><div class="fix-modal-content card"><div class="spin" style="margin:0 auto 12px"></div><h2 style="text-align:center;margin:0">🎨 Generating Fixed Design...</h2><p class="mut" style="text-align:center">AI is fixing your design${S.fixIssue === 'all' ? ' (all issues)' : ''}. This may take 30-60 seconds.</p></div></div>` : ''}
 
-${S.fixResult && !S.fixResult.error ? `<div class="fix-modal"><div class="fix-modal-content card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">🔧 Fix Instructions</h2><button data-act="close-fix" style="font-size:20px;padding:4px 12px">✕</button></div>${S.fixResult.overall_fix_plan ? `<div class="fix-summary"><p><b>📋 Summary:</b> ${esc(S.fixResult.overall_fix_plan.summary || '')}</p>${S.fixResult.overall_fix_plan.quick_wins?.length ? `<p><b>⚡ Quick Wins:</b></p><ul>${S.fixResult.overall_fix_plan.quick_wins.map(w => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}</div>` : ''}${(S.fixResult.fixes || []).map((f, i) => `<div class="fix-card"><div class="fix-card-header"><h3>🔧 ${esc(f.issue_title || 'Fix #' + (i+1))}</h3><div><span class="badge ${f.difficulty === 'easy' ? 'badge-easy' : f.difficulty === 'medium' ? 'badge-medium' : 'badge-hard'}">${esc(f.difficulty || 'medium')}</span><span class="mut small"> · ${esc(f.time_estimate || '')}</span></div></div><div class="fix-steps"><h4>Steps:</h4><ol>${(f.steps || []).map(s => `<li>${esc(s)}</li>`).join('')}</ol></div>${f.css_changes ? `<div class="fix-code"><h4>Code:</h4><pre><code>${esc(f.css_changes)}</code></pre></div>` : ''}${f.specific_values && Object.keys(f.specific_values).filter(k => f.specific_values[k]).length ? `<div class="fix-values"><h4>Specific Values:</h4><div class="fix-values-grid">${Object.entries(f.specific_values).filter(([k,v]) => v).map(([k,v]) => `<div class="fix-value-item"><span class="mut small">${esc(k.replace(/_/g,' '))}:</span> <code>${esc(v)}</code>${k === 'color' || k.includes('color') ? `<span class="color-dot" style="background:${esc(v)}"></span>` : ''}</div>`).join('')}</div></div>` : ''}<div class="fix-comparison"><div class="fix-before"><h4>❌ Before:</h4><p class="small">${esc(f.before_description || '')}</p></div><div class="fix-after"><h4>✅ After:</h4><p class="small">${esc(f.after_description || '')}</p></div></div></div>`).join('')}<div style="text-align:center;margin-top:20px"><button data-act="close-fix" class="pri">Done</button> <button data-act="export-fix">📄 Export Fix Guide</button></div></div></div>` : ''}
+${S.fixResult && S.fixResult.fixed_image ? `<div class="fix-modal"><div class="fix-modal-content card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">✅ Fixed Design</h2><button data-act="close-fix" style="font-size:20px;padding:4px 12px">✕</button></div><div class="before-after"><div class="ba-panel"><h3>❌ Before</h3><div class="ba-img"><img src="${S.src}" alt="Original design"></div></div><div class="ba-panel"><h3>✅ After (Fixed)</h3><div class="ba-img"><img src="${S.fixResult.fixed_image}" alt="Fixed design"></div></div></div>${S.fixResult.description ? `<p class="mut small" style="margin-top:12px;text-align:center">${esc(S.fixResult.description)}</p>` : ''}<div class="row" style="margin-top:16px"><button class="pri" data-act="download-fixed">💾 Download Fixed Image</button><button data-act="analyze-fixed">🔍 Analyze Fixed Version</button><button data-act="close-fix">Close</button></div></div></div>` : ''}
 
-${S.fixResult && S.fixResult.error ? `<div class="fix-modal"><div class="fix-modal-content card"><h2 style="color:var(--crit)">❌ Error</h2><p>${esc(S.fixResult.error)}</p><button data-act="close-fix">Close</button></div></div>` : ''}`;
+${S.fixResult && S.fixResult.error ? `<div class="fix-modal"><div class="fix-modal-content card"><h2 style="color:var(--crit)">❌ Error</h2><p>${esc(S.fixResult.error)}</p><div class="row" style="margin-top:12px"><button data-act="close-fix">Close</button></div></div></div>` : ''}`;
 }
 
 function learn(id) {
@@ -298,6 +298,22 @@ document.addEventListener('click', (e) => {
   else if (a === 'fix-one') { fixIssue(+b.dataset.idx); }
   else if (a === 'fix-all') { fixAllIssues(); }
   else if (a === 'close-fix') { closeFix(); }
+  else if (a === 'download-fixed') {
+    if (S.fixResult?.fixed_image) {
+      const a2 = document.createElement('a'); a2.href = S.fixResult.fixed_image;
+      a2.download = 'designcoach-fixed.png'; a2.click();
+    }
+  }
+  else if (a === 'analyze-fixed') {
+    if (S.fixResult?.fixed_image) {
+      S.src = S.fixResult.fixed_image;
+      S.file = { name: 'fixed-design.png', size: 0 };
+      S.fixResult = null; S.fixIssue = null;
+      S.result = null; S.sel = null; S.teach = {};
+      render();
+      analyze();
+    }
+  }
   else if (a === 'export-fix') {
     if (S.fixResult && S.fixResult.fixes) {
       let txt = 'DESIGNCOACH FIX GUIDE\n' + '='.repeat(40) + '\n\n';
